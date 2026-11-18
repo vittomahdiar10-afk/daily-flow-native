@@ -1,8 +1,12 @@
 package io.github.vittomahdiar10.dailyflow
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -19,6 +23,7 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
@@ -34,9 +39,18 @@ class MainActivity : AppCompatActivity() {
             filePathCallback = null
         }
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            // وضعیت مجوز اعلان‌ها در سیستم‌عامل ثبت شد
+        }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ثبت کانال اعلان‌های برنامه و درخواست مجوز نوتیفیکیشن در اندروید ۱۳ به بالا
+        createNotificationChannel()
+        requestNotificationPermissionIfNeeded()
 
         // فعال‌سازی تمام‌صفحه شفاف واقعی (True Edge-to-Edge) بدون هیچ نوار سفید یا مشکی
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -131,6 +145,34 @@ class MainActivity : AppCompatActivity() {
         webView.saveState(outState)
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "daily_flow_reminders",
+                "یادآورهای Daily Flow",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "اعلان یادآور کارها و زمان‌بندی روزانه"
+                enableVibration(true)
+            }
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     private fun isOnline(): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         val network = cm.activeNetwork ?: return false
@@ -162,6 +204,25 @@ class MainActivity : AppCompatActivity() {
                     }
                     startActivity(Intent.createChooser(sendIntent, "ذخیره یا ارسال پشتیبان"))
                 } catch (e: Exception) {}
+            }
+        }
+
+        @JavascriptInterface
+        fun hasNotificationPermission(): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
+
+        @JavascriptInterface
+        fun requestNotificationPermission() {
+            runOnUiThread {
+                requestNotificationPermissionIfNeeded()
             }
         }
     }
