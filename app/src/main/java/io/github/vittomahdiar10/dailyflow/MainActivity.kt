@@ -112,7 +112,11 @@ class MainActivity : AppCompatActivity() {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
                 return try {
-                    filePickerLauncher.launch("image/*")
+                    val acceptTypes = fileChooserParams?.acceptTypes ?: emptyArray()
+                    val wantsJson = acceptTypes.any {
+                        it.contains("json", ignoreCase = true) || it.contains("text", ignoreCase = true)
+                    }
+                    filePickerLauncher.launch(if (wantsJson) "*/*" else "image/*")
                     true
                 } catch (e: Exception) {
                     this@MainActivity.filePathCallback = null
