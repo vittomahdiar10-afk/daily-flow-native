@@ -6,8 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -81,11 +79,7 @@ class MainActivity : AppCompatActivity() {
         settings.mediaPlaybackRequiresUserGesture = false
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
-        settings.cacheMode = if (isOnline()) {
-            WebSettings.LOAD_DEFAULT
-        } else {
-            WebSettings.LOAD_CACHE_ELSE_NETWORK
-        }
+        settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
 
         webView.addJavascriptInterface(NativeBridge(), "AndroidNative")
 
@@ -177,14 +171,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun isOnline(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-
     inner class NativeBridge {
+        @JavascriptInterface
+        fun clearWebCache() {
+            runOnUiThread {
+                try {
+                    webView.clearCache(true)
+                } catch (e: Exception) {}
+            }
+        }
+
         @JavascriptInterface
         fun setSystemBarTheme(isLight: Boolean) {
             runOnUiThread {
