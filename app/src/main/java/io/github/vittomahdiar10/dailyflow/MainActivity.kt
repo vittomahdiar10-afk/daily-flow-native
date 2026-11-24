@@ -2,8 +2,6 @@ package io.github.vittomahdiar10.dailyflow
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,6 +11,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -40,16 +39,21 @@ class MainActivity : AppCompatActivity() {
         }
 
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
-            // وضعیت مجوز اعلان‌ها در سیستم‌عامل ثبت شد
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (::webView.isInitialized) {
+                webView.evaluateJavascript(
+                    "if(typeof window.__onNativeNotificationPermission==='function'){window.__onNativeNotificationPermission(${if (granted) "true" else "false"});}",
+                    null
+                )
+            }
         }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ثبت کانال اعلان‌های برنامه و درخواست مجوز نوتیفیکیشن در اندروید ۱۳ به بالا
-        createNotificationChannel()
+        // ثبت کانال‌های اعلان برنامه و درخواست مجوز نوتیفیکیشن در اندروید ۱۳ به بالا
+        ReminderScheduler.createNotificationChannels(this)
         requestNotificationPermissionIfNeeded()
 
         // فعال‌سازی تمام‌صفحه شفاف واقعی (True Edge-to-Edge) بدون هیچ نوار سفید یا مشکی
@@ -144,25 +148,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val channelId = intent.getStringExtra(ReminderScheduler.EXTRA_CHANNEL_ID) ?: return
+        if (::webView.isInitialized && channelId == ReminderScheduler.CHANNEL_FOCUS) {
+            webView.evaluateJavascript(
+                "if(typeof window.__onNativeNotificationOpen==='function'){window.__onNativeNotificationOpen('focus');}",
+                null
+            )
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         webView.saveState(outState)
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "daily_flow_reminders",
-                "یادآورهای Daily Flow",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "اعلان یادآور کارها و زمان‌بندی روزانه"
-                enableVibration(true)
-            }
-            val notificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.createNotificationChannel(channel)
-        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -228,6 +228,86 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 requestNotificationPermissionIfNeeded()
             }
+        }
+
+        @JavascriptInterface
+        fun canScheduleExactAlarms(): Boolean {
+            return ReminderScheduler.canScheduleExactAlarms(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun openNotificationSettings() {
+            runOnUiThread {
+                try {
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        }
+                    } else {
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName")
+                        )
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {}
+            }
+        }
+
+        @JavascriptInterface
+        fun openExactAlarmSettings() {
+            runOnUiThread {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        val intent = Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:$packageName")
+                        )
+                        startActivity(intent)
+                    } catch (e: Exception) {}
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun showInstantNotification(idKey: String, title: String, body: String, channelId: String): Boolean {
+            return ReminderScheduler.showNotificationNow(
+                context = this@MainActivity,
+                idKey = idKey,
+                title = title,
+                body = body,
+                channelId = channelId
+            )
+        }
+
+        @JavascriptInterface
+        fun scheduleNotification(
+            idKey: String,
+            triggerAtMillis: Long,
+            title: String,
+            body: String,
+            channelId: String,
+            repeatDaily: Boolean
+        ): Boolean {
+            return ReminderScheduler.scheduleAlarm(
+                context = this@MainActivity,
+                idKey = idKey,
+                triggerAtMillis = triggerAtMillis,
+                title = title,
+                body = body,
+                channelId = channelId,
+                repeatDaily = repeatDaily
+            )
+        }
+
+        @JavascriptInterface
+        fun cancelNotification(idKey: String) {
+            ReminderScheduler.cancelAlarm(this@MainActivity, idKey)
+        }
+
+        @JavascriptInterface
+        fun cancelNotificationsByPrefix(prefix: String) {
+            ReminderScheduler.cancelByPrefix(this@MainActivity, prefix)
         }
     }
 }
